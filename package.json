@@ -1,0 +1,20 @@
+{
+  "name": "rest2soap",
+  "version": "0.0.1",
+  "dependencies": {
+    "@adobe/aio-sdk": "^1.0.2",
+    "node-fetch": "^2.6.0",
+    "react": "^16.9.0",
+    "react-dom": "^16.9.0",
+    "react-error-boundary": "^1.2.5",
+    "@tripod/openpgp": "^4.1.2"
+  },
+  "devDependencies": {
+    "jest": "^24.9.0",
+    "@adobe/wskdebug": "^1.1.0"
+  },
+  "scripts": {
+    "test": "jest",
+    "e2e": "jest --collectCoverage=false --testRegex ./e2e"
+  }
+}

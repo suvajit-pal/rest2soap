@@ -1,0 +1,12 @@
+packages:
+  __APP_PACKAGE__:
+    license: Apache-2.0
+    actions:
+      testConnection:
+        function: actions\testConnection\index.js
+        web: 'yes'
+        runtime: 'nodejs:10'
+        inputs:
+          LOG_LEVEL: debug
+        annotations:
+          final: true
