@@ -110,4 +110,4 @@ dist
 
 #aio runtime directories
 web-src/
-
+e2e/
