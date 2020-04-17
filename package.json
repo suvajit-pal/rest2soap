@@ -3,11 +3,14 @@
   "version": "0.0.1",
   "dependencies": {
     "@adobe/aio-sdk": "^1.0.2",
+    "asmcrypto.js": "^2.3.2",
     "node-fetch": "^2.6.0",
+    "@tripod/openpgp": "4.1.2-node8-8",
     "react": "^16.9.0",
     "react-dom": "^16.9.0",
     "react-error-boundary": "^1.2.5",
-    "@tripod/openpgp": "^4.1.2"
+    "web-stream-tools": "0.0.1",
+    "xmlbuilder2": "^1.8.1"
   },
   "devDependencies": {
     "jest": "^24.9.0",

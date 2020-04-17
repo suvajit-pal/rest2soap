@@ -111,3 +111,9 @@ dist
 #aio runtime directories
 web-src/
 e2e/
+.vscode/
+
+#config files
+config.json
+keys/
+config_test.json

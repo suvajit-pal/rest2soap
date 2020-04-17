@@ -10,3 +10,19 @@ packages:
           LOG_LEVEL: debug
         annotations:
           final: true
+      getRestRequestFromSoap:
+        function: actions\getRestRequestFromSoap\index.js
+        web: 'yes'
+        runtime: 'nodejs:10'
+        inputs:
+          LOG_LEVEL: debug
+        annotations:
+          final: true
+      invokeSoapAction:
+        function: actions\invokeSoapAction\index.js
+        web: 'yes'
+        runtime: 'nodejs:10'
+        inputs:
+          LOG_LEVEL: debug
+        annotations:
+          final: true
