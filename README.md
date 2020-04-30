@@ -16,10 +16,11 @@ This is technically not a pure REST wrapper as it supports only POST actions and
 
 - Create a package parameter bind.
 
-```aio rt pkg bind [packagename] [bindpackagename] --param-file config/config.json ```
+	```aio rt pkg bind [packagename] [bindpackagename] --param-file config/config.json ```
 
 To update the package binding of an existing package run
-```aio rt pkg update --param-file config/config.json```
+
+	```aio rt pkg update --param-file config/config.json```
 
 - Multiple package binds can be created for different parameter values.
 
