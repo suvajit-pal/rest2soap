@@ -1,81 +1,55 @@
-/*  test connection */
+/*
+ * Test connection 
+ * 	Checks Connection.
+ *	Validate Encryption Keys.
+ * 	Validate Decryption Keys.
+ *
+ *	Suvajit@Adobe.
+ */
 
-//const { Core } = require('@adobe/aio-sdk')
-const openpgp = require('@tripod/openpgp'); 
 const Utils = require('../utils');
-
+	
 async function main (params) {
   const util = new Utils(params);
   
   try {
-	const {privateKeyArmored, publicKeyArmored, secret} = util.getPGPKeys(); 
 	
-	if (params.checkDecryption && (!privateKeyArmored || !publicKeyArmored || !secret)) {
-		return {
-			'Content-Type': 'application/json',
-			statusCode: 400,
-			body: {
-				error: 'Missing one or more required configurations for encryption.'
-			}
-		}		
+	// if PGP encryption or decryption check is set to Y,
+	// initilaize the PGP parameters
+	if (params.checkDecryption && params.checkDecryption == 'Y' || params.checkEncryption && params.checkEncryption == 'Y') {
+		await util.initPGPKeys();		
 	}
 	
-	const { keys: [privateKey] } = await openpgp.key.readArmored(privateKeyArmored);
-	await privateKey.decrypt(secret);
-	
-	if (params.checkDecryption) {
+	if (params.checkDecryption && params.checkDecryption == 'Y') {
 		const data = util.getPayloadData();		
 		
 		if (!data) {
 			return {
 				'Content-Type': 'application/json',
-				statusCode: 400,
+				statusCode: 500,
 				body: {
 					error: 'Missing encrypted payload data.'
 				}
 			}		
 		}		
 
-		const { data: decrypted, signatures: checkSig } = await openpgp.decrypt({
-			message: await openpgp.message.readArmored(data),            			// parse armored message
-			publicKeys: (await openpgp.key.readArmored(publicKeyArmored)).keys,	// check message signing
-			privateKeys: [privateKey]                                       		// for decryption
-		});
-	
-		if (checkSig[0].valid) {	
+		const decryptedData = await util.decryptData(data);
 			
-			return {
-			  statusCode: 200,
-			  body: JSON.parse(decrypted)
-			}
+		return {
+			statusCode: 200,
+			body: decryptedData
 		}
-		else {
-			return {
-			  statusCode: 500,
-			  body: {response: "Invalid Singnature"}
-			}
-		}
-	}
-	else if (params.checkEncryption) {
-		const returnMsg = {message: "This is a test message from Adobe @ " + new Date()};
 
-		openpgp.config.compression = openpgp.enums.compression.zip;
-		openpgp.config.prefer_hash_algorithm = openpgp.enums.hash.sha256;		
-		openpgp.config.encryption_cipher = openpgp.enums.symmetric.aes256;
-		openpgp.config.show_comment = false;
+	}
+	else if (params.checkEncryption && params.checkEncryption == 'Y') {
+		const returnMsg = {message: "This is a test message from Adobe @ " + new Date()};
 		
-		const { data: encrypted} = await openpgp.encrypt({
-			message: await openpgp.message.fromText(JSON.stringify(returnMsg)),     // parse decrypted message
-			publicKeys: (await openpgp.key.readArmored(publicKeyArmored)).keys,	// for encrypting the message
-			privateKeys: [privateKey],                                       	// for signing the message
-			armor: true,
-			detached: false
-		});			
+		const encryptedData = await util.encryptData(returnMsg);		
 		
 		return {
 		  'Content-Type': 'text/plain',
 		  statusCode: 200,
-		  body: encrypted
+		  body: encryptedData
 		}	
 	}
 	else {
@@ -87,7 +61,7 @@ async function main (params) {
   } catch (error) {
     return {
       statusCode: 500,
-      body: { error: error.toString() }
+      body: { error: error.toString()}
     }
   }
 }

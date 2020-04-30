@@ -5,8 +5,41 @@
 */
 
 const { create, fragment, convert } = require('xmlbuilder2');
+const fetch = require('node-fetch');
+const openpgp = require('@tripod/openpgp'); 
 
-function Utils(params) { this.__params = params; }
+/**
+ * 
+ * @param {object} Input params object to our actions
+ * Constructor function. 
+ */
+function Utils(params) { 
+	this.__params = params; 
+	
+	this.__soapConfig = require('./accSoapConfig');	
+}
+
+/**
+ * Initializes the persistent State library
+ */
+Utils.prototype.initState = async function() {
+	if (this.__state && this.__state != null) return this.__state;
+	
+	const key_namespace = '__namespace';
+	const key_auth = '__auth';
+	
+	const namespace = (this.__params[key_namespace] || '').toString();
+	const auth = (this.__params[key_auth] || '').toString();
+	
+	if (namespace != '' && auth != '') {
+		const stateLib = require('@adobe/aio-lib-state');
+		const state = await stateLib.init({ow: {namespace: namespace, auth: auth}});
+		this.__state = state;
+		
+		return this.__state;
+	}
+	else return null;
+}	
 
 /**
  * Returns a cleaned json structure for SOAP requests
@@ -20,8 +53,8 @@ Utils.prototype.cleanPropnames = function(obj) {
 		
 		if (obj.hasOwnProperty(property)) {
 			var newPropname;
-			if (property.indexOf('urn:') >= 0) {
-				newPropname = property.replace('urn:','');
+			if (property.indexOf(this.__soapConfig.urnKeyword) >= 0) {
+				newPropname = property.replace(this.__soapConfig.urnKeyword,'');
 				obj[newPropname] = obj[property];
 				delete obj[property];
 			}
@@ -36,16 +69,99 @@ Utils.prototype.cleanPropnames = function(obj) {
 }
 
 /**
- * Returns the pgp keys 
+ * Set's the preferences of openpgp encryption
+ * @param {object} openpgp object
  *
- * @returns {object} The private key, public key and the password
+ * @returns {object} openpgp object
  */
-Utils.prototype.getPGPKeys = function() {
-	const privateKeyArmored = this.__params.key ? this.__params.key : (Buffer.from(this.__params.f_key, 'base64')).toString('ascii');
-	const publicKeyArmored = this.__params.public_key ? this.__params.public_key : (Buffer.from(this.__params.f_public_key, 'base64')).toString('ascii');
-	const pass = this.__params.pass;
+Utils.prototype.setPGPPreferences = function(openpgp) {
+	openpgp.config.compression = openpgp.enums.compression.zip;
+	openpgp.config.prefer_hash_algorithm = openpgp.enums.hash.sha256;		
+	openpgp.config.encryption_cipher = openpgp.enums.symmetric.aes256;
+	openpgp.config.show_comment = false;
 	
-	return {privateKeyArmored: privateKeyArmored, publicKeyArmored: publicKeyArmored, secret: pass};
+	return openpgp;
+}
+
+/**
+ * Initiatlizes the PGP options 
+ *
+ */
+Utils.prototype.initPGPKeys = async function() {
+
+	if (!this.__privateKey && !this.__publicKey) {
+		const privateKeyArmored = this.__params.key ? this.__params.key : (Buffer.from(this.__params.f_key, 'base64')).toString('ascii');
+		const publicKeyArmored = this.__params.public_key ? this.__params.public_key : (Buffer.from(this.__params.f_public_key, 'base64')).toString('ascii');
+		const pass = this.__params.pass;
+		
+		if (!privateKeyArmored || !publicKeyArmored || !pass) {
+			throw new Error('Missing one or more required configurations for encryption.');	
+		}
+
+		this.setPGPPreferences(openpgp);
+		
+		const { keys: [privateKey] } = await openpgp.key.readArmored(privateKeyArmored);
+		await privateKey.decrypt(pass);	
+		
+		const { keys: [publicKey] } = await openpgp.key.readArmored(publicKeyArmored);
+
+		this.__privateKey = [privateKey];
+		this.__publicKey = [publicKey];
+	}
+
+}
+
+/**
+ * @param {data} Armoured data to be decrypted.
+ * 
+ * @returns Decrypted plaintext or an exception if decryption fails
+ */
+Utils.prototype.decryptData = async function (data) {
+	await this.initPGPKeys();
+
+	const { data: decrypted, signatures: checkSig } = await openpgp.decrypt({
+		message: await openpgp.message.readArmored(data),    // parse armored message
+		publicKeys: this.__publicKey,								// for checking signature
+		privateKeys: this.__privateKey                             	// for decryption
+	});
+	
+	if (this.__params.verifySignature && this.__params.verifySignature == 'Y' && !checkSig[0].valid) {
+		throw new Error('Request payload was malformed.');
+	}	
+
+	return decrypted;
+}
+
+/**
+ * @param {data} Plaintext data to be encrypted
+ * 
+ * @returns Encrypted armoured data
+ */
+Utils.prototype.encryptData = async function (data) {
+	await this.initPGPKeys();
+
+	if (this.__params.verifySignature && this.__params.verifySignature == 'Y') {
+		const { data: encrypted} = await openpgp.encrypt({
+			message: await openpgp.message.fromText(data),  // parse decrypted message
+			publicKeys: this.__publicKey,					// for encrypting the message
+			privateKeys: this.__privateKey,					// for signing the message
+			armor: true,
+			detached: false
+		});	
+
+		return encrypted;
+	}
+	else {
+		const { data: encrypted} = await openpgp.encrypt({
+			message: await openpgp.message.fromText(data),   // parse decrypted message
+			publicKeys: this.__publicKey,					// for encrypting the message
+			armor: true
+		});	
+
+		return encrypted;		
+	}
+
+
 }
 
 /**
@@ -63,7 +179,7 @@ Utils.prototype.getPayloadData = function() {
  * @returns {string} the soap payload data
  */
 Utils.prototype.getSoapRequest = function() {
-	return this.__params.soapRequest ? this.__params.soapRequest : this.__params['__ow_body'];
+	return this.__params.soapRequest ? this.__params.soapRequest : this.__params.__ow_body;
 }
 
 /**
@@ -79,7 +195,7 @@ Utils.prototype.makeSoapObj = function (obj) {
 	let fragmentPayload = {};
 	
 	if (typeof obj.payload[firstElement] == "object") {
-		reqElemName = 'urn:'+reqElemName;
+		reqElemName = this.__soapConfig.urnKeyword+reqElemName;
 		fragmentPayload[reqElemName] = obj.payload[Object.getOwnPropertyNames(obj.payload)[0]];
 	}
 	else {
@@ -88,17 +204,20 @@ Utils.prototype.makeSoapObj = function (obj) {
 		}
 	}
 	
-	const frag = fragment({convert: {att: 'attr_'}}, fragmentPayload);
-	
-	const soapReq = create('<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"></soapenv:Envelope>')
-					.root().att('xmlns:urn', 'urn:'+obj.schema)
-					.ele('soapenv:Header')
-					.up().ele('soapenv:Body')
-						.ele('urn:'+obj.method)
-							.ele('urn:sessiontoken')
+	const frag = fragment({convert: {att: this.__soapConfig.attrPrefix}}, fragmentPayload);
+
+	const rootObj = {};
+	rootObj[this.__soapConfig.soapEnvStr] = '';
+
+	const soapReq = create(rootObj)
+					.root().att(this.__soapConfig.soapNsStr, this.__soapConfig.soapNsUrl)
+					.root().att(this.__soapConfig.namespaceStr, this.__soapConfig.urnKeyword+obj.schema)
+					.ele(this.__soapConfig.soapHeaderStr)
+					.up().ele(this.__soapConfig.soapBodyStr)
+						.ele(this.__soapConfig.urnKeyword+obj.method)
+							.ele(this.__soapConfig.sessionStr)
 							.up().import(frag)
-							.end();
-							
+							.end();			
 	return soapReq;
 }
 
@@ -110,14 +229,20 @@ Utils.prototype.makeSoapObj = function (obj) {
  */
 Utils.prototype.getRestRequestFormat = function (soapRequest) {
 	
-	const reqObject = convert({convert: {att: 'attr_'}}, soapRequest, {format: 'object'});
-	const schemaName = reqObject['soapenv:Envelope']['attr_xmlns:urn'].replace('urn:','');
-	const reqMethod = Object.getOwnPropertyNames(reqObject['soapenv:Envelope']['soapenv:Body'])[0].replace('urn:','');
+	const reqObject = convert({convert: {att: this.__soapConfig.attrPrefix}}, soapRequest, {format: 'object'});
+	const schemaName = reqObject[this.__soapConfig.soapEnvStr][this.__soapConfig.attrPrefix + this.__soapConfig.namespaceStr].replace(this.__soapConfig.urnKeyword,'');
+	const reqMethod = Object.getOwnPropertyNames(reqObject[this.__soapConfig.soapEnvStr][this.__soapConfig.soapBodyStr])[0].replace(this.__soapConfig.urnKeyword,'');
 	
-	let requestPayload = reqObject['soapenv:Envelope']['soapenv:Body']['urn:'+reqMethod];
-	delete  requestPayload['urn:sessiontoken'];
+	let requestPayload = reqObject[this.__soapConfig.soapEnvStr][this.__soapConfig.soapBodyStr][this.__soapConfig.urnKeyword+reqMethod];
+	delete  requestPayload[this.__soapConfig.sessionStr];
 	
-	return {schema: schemaName, method: reqMethod, 'securityToken': '**pass security token value**', 'sessionToken': '**pass session token**', payload: this.cleanPropnames(requestPayload)};
+	let restRequestFormat = {schema: schemaName, method: reqMethod, payload: this.cleanPropnames(requestPayload)};
+
+	if (!this.__params.generateToken || this.__params.generateToken === 'N') {
+		restRequestFormat.securityToken = '<<Pass security token from Logon method response>>';
+		restRequestFormat.sessionToken = '<<Pass session token from Logon method response>>';
+	}
+	return restRequestFormat;
 }
 	
 /**
@@ -128,7 +253,8 @@ Utils.prototype.getRestRequestFormat = function (soapRequest) {
  */
 Utils.prototype.cleanSoapPropNames = function (obj) {
     for (var property in obj) {
-        if (property === '!' || property.indexOf('@') >= 0) delete obj[property];
+		if (this.__soapConfig.filterResponseElements.find(function(keyword) { return this.lookup.indexOf(keyword) >= 0 }, {lookup: property}))
+			delete obj[property];
 		else {
 			if (obj.hasOwnProperty(property)) {
 				if (typeof obj[property] == "object"){
@@ -157,118 +283,200 @@ Utils.prototype.cleanSoapPropNames = function (obj) {
  * @returns {object} Response REST object sanitized of soap attributes
  */
 Utils.prototype.getRestResponse = function (obj, method) {
+
+	const response = convert({convert: {att: this.__soapConfig.attrPrefix, text: this.__soapConfig.valueKey}}, obj, {format: 'object'});
 	
-	const response = convert({convert: {text: 'value'}}, obj, {format: 'object'});
-	
-	let restResponse = response['SOAP-ENV:Envelope']['SOAP-ENV:Body']['ns:'+method+'Response'];
+	let restResponse = response[this.__soapConfig.soapEnvRespStr][this.__soapConfig.soapBodyRespStr][this.__soapConfig.nsKeyword+method+'Response'];
 	if (!restResponse || restResponse == undefined) {
-		restResponse = response['SOAP-ENV:Envelope']['SOAP-ENV:Body']['SOAP-ENV:Fault'];
+		restResponse = response[this.__soapConfig.soapEnvRespStr][this.__soapConfig.soapBodyRespStr][this.__soapConfig.soapFaultRespStr];
 		if (!restResponse || restResponse == undefined) throw new Error(`Failed to parse response. Original response ${response}`);
 	}
 	restResponse = this.cleanSoapPropNames(restResponse);
 	return restResponse;
 }
 
-
-
 /**
- *
- * Returns a log ready string of the action input parameters.
- * The `Authorization` header content will be replaced by '<hidden>'.
+ * Returns the login Payload
  *
  *
- * @returns {string}
- *
+ * @returns {object} the login payload
  */
-Utils.prototype.stringParameters = function () {
-  // hide authorization token without overriding params
-  let headers = this.__params.__ow_headers || {}
-  if (headers.authorization) {
-    headers = { ...headers, authorization: '<hidden>' }
-  }
-  return JSON.stringify({ ...this.__params, __ow_headers: headers })
+Utils.prototype.getLoginPayload = function() {
+
+	const loginPayload = {
+							method: "Logon",
+							payload: {
+								strLogin: this.__params.instanceLoginAPI,
+								strPassword: this.__params.instanceLoginAPIKey,
+								elemParameters: {}
+							},
+							schema: "xtk:session",
+							securityToken: "",
+							sessionToken: ""
+						};    
+	
+	const soapPayload = this.makeSoapObj(loginPayload);
+
+	const headers = {
+					'Content-Type': 'text/xml;charset=UTF-8',
+					'SOAPAction': loginPayload.schema+'#'+loginPayload.method
+				  };
+	
+	const requestPayload = {
+      headers: headers,
+      method: 'POST',
+      body: soapPayload.toString()
+    };	
+	
+	return requestPayload;	
 }
 
 /**
- *
- * Returns the list of missing keys giving an object and its required keys.
- *
- * @param {object} obj object to check.
- * @param {array} required list of required keys.
- *        Each element can be multi level deep using a '.' separator e.g. 'myRequiredObj.myRequiredKey'
- *
- * @returns {array}
- * @private
+ * @param {object} Input request object in JSON format.
+ * @param {boolean} Force generation of token if required.
+ * 
+ * @returns The REST format response returned
  */
-Utils.prototype.getMissingKeys = function (obj, required) {
-  return required.filter(r => {
-    const splits = r.split('.')
-    const last = splits[splits.length - 1]
-    const traverse = splits.slice(0, -1).reduce((tObj, split) => { tObj = (tObj[split] || {}); return tObj }, obj)
-    return !traverse[last]
-  })
-}
+Utils.prototype.makeSoapCall = async function(requestObj, generateToken = false) {
+	
+	const apiEndpoint = this.getSOAPAPIEndpoint();
+	const tokenKey = 'tokens_'+this.__params.instance;
 
-/**
- *
- * Returns the list of missing keys giving an object and its required keys.
- * @param {array} requiredParams list of required input parameters.
- *        Each element can be multi level deep using a '.' separator e.g. 'myRequiredObj.myRequiredKey'.
- *
- * @returns {string} if the return value is not null, then it holds an error message describing the missing inputs.
- *
- */
-Utils.prototype.checkMissingRequestInputs = function (requiredParams = [], requiredHeaders = []) {
-  let errorMessage = null
+	// Check if we expect logon token to be available.
+	if ((this.__params.generateToken && this.__params.generateToken === 'Y') || generateToken) {
+		// The system should automatically generate logon tokens.
+		// any tokens passed in the input will be overwridden.
+	
+		let loginTokens = await this.getKeyValue(tokenKey);
+		if (!loginTokens) {
+			loginTokens = await this.getTokens();
+			
+			// save the token for reuse
+			await this.setKeyValue(tokenKey, loginTokens, loginTokens.sesstionTimeout);
+		}	
+		requestObj.securityToken = loginTokens.securityToken;
+		requestObj.sessionToken = loginTokens.sessionToken;		
+	}
 
-  // input headers are always lowercase
-  requiredHeaders = requiredHeaders.map(h => h.toLowerCase())
-  // check for missing headers
-  const missingHeaders = this.getMissingKeys(this.__params.__ow_headers || {}, requiredHeaders)
-  if (missingHeaders.length > 0) {
-    errorMessage = `missing header(s) '${missingHeaders}'`
-  }
-
-  // check for missing parameters
-  const missingParams = this.getMissingKeys(requiredParams)
-  if (missingParams.length > 0) {
-    if (errorMessage) {
-      errorMessage += ' and '
-    } else {
-      errorMessage = ''
+	if (!requestObj.payload || !requestObj.method || !requestObj.schema || requestObj.securityToken === undefined || requestObj.sessionToken === undefined) {
+		throw new Error('Missing one or more required params sessionToken, securityToken, payload, method, schema');
+	}	
+	
+	// Build the SOAP request XML from the rest object
+	const soapRequest = this.makeSoapObj(requestObj);
+	let headers = {
+					'Content-Type': 'text/xml;charset=UTF-8',
+					'SOAPAction': requestObj.schema+'#'+requestObj.method
+				  };
+	
+	// Add authentication tokens
+	if 	(requestObj.securityToken && requestObj.securityToken != "")
+		headers['X-Security-Token'] = requestObj.securityToken;	
+	if 	(requestObj.sessionToken && requestObj.sessionToken != "")
+		headers['cookie'] = '__sessiontoken='+requestObj.sessionToken;	
+	
+	// Define the final payload
+	const options = {
+      headers: headers,
+      method: 'POST',
+      body: soapRequest.toString()
+    };
+	
+	// Make the soap call
+	const soapResponse = await fetch(apiEndpoint, options);
+    
+	if (!soapResponse.ok) {
+		// if the response has failed and we used auto generate tokens, 
+		// reset the key as the cached tokens are most probably invalid.
+		if ((this.__params.generateToken && this.__params.generateToken === 'Y') || generateToken) {
+			await this.setKeyValue(tokenKey, null);
+		}
+		throw new Error(`request to '${apiEndpoint}' failed with status code '${soapResponse.status}'`)
     }
-    errorMessage += `missing parameter(s) '${missingParams}'`
-  }
+	
+	// Retrieve the response.
+	const content = await soapResponse.text();
+	// Transpose it to a valid JSON object
+	const restResponse = this.getRestResponse(content, requestObj.method);
 
-  return errorMessage
+	return restResponse;
 }
 
 /**
+ * Performs Login and retrieves token
  *
- * Returns an error response object and attempts to log.info the status code and error message
  *
- * @param {number} statusCode the error status code.
- *        e.g. 400
- * @param {string} message the error message.
- *        e.g. 'missing xyz parameter'
- * @param {*} [logger] an optional logger instance object with an `info` method
- *        e.g. `new require('@adobe/aio-sdk').Core.Logger('name')`
- *
- * @returns {object} the error object, ready to be returned from the action main's function.
- *
+ * @returns {object} the session and security tokens
  */
-Utils.prototype.errorResponse = function (statusCode, message, logger) {
-  if (logger && typeof logger.info === 'function') {
-    logger.info(`${statusCode}: ${message}`)
-  }
-  return {
-    error: {
-      statusCode,
-      body: {
-        error: message
-      }
+Utils.prototype.getTokens = async function() {
+
+	const loginPayload = this.getLoginPayload();
+	const apiEndpoint = this.getSOAPAPIEndpoint();
+	const soapResponse = await fetch(apiEndpoint, loginPayload);
+    
+	if (!soapResponse.ok) {
+      throw new Error(`Login request to '${apiEndpoint}' failed with status code '${soapResponse.status}'`)
     }
-  }
+	
+    const content = await soapResponse.text();
+	const restResponse = this.getRestResponse(content, 'Logon');
+	
+	const securityToken = restResponse.pstrSecurityToken.value || '';
+	const sessionToken = restResponse.pstrSessionToken.value || '';
+	const sesstionTimeout = restResponse.pSessionInfo.sessionInfo.serverInfo.attr_sessionTimeOut;
+	
+	return {securityToken: securityToken, sessionToken: sessionToken, sessionTimeout: sesstionTimeout}; 
+		
+}
+
+/**
+ * Get the SOAP API endpoint
+ *
+ *
+ * @returns {string} the SOAP API endpoint
+ */
+Utils.prototype.getSOAPAPIEndpoint = function() {
+
+	return 'https://'+this.__params.instance+'.campaign.adobe.com/nl/jsp/soaprouter.jsp';	
+}
+
+/**
+ * Returns the key value persisted or undefined
+ * @param {string} key name
+ *
+ * @returns {any} The value associated with the key
+ */
+
+Utils.prototype.getKeyValue = async function(key) {
+	
+	await this.initState();	
+	if (!this.__state) return null;
+	
+	const val = await this.__state.get(key);	
+	if (!val) return null;
+	 
+	const expired = new Date(val.expiration);
+	const now = new Date();
+		
+	if (expired <= now) return null;
+	else return val.value;
+}
+
+/**
+ * Sets the key value to be persisted
+ * @param {string} key name
+ * @param {any} associated value
+ *
+ * @returns {any} The value associated with the key
+ */
+Utils.prototype.setKeyValue = async function(key, value, duration = 86400) {
+	
+	await this.initState();	
+	if (!this.__state) return null;
+	
+	if (key == null || key == undefined || key == '') return;
+	
+	await this.__state.put(key, value, {ttl: duration});
 }
 
 module.exports = Utils;

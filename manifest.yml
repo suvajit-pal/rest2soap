@@ -24,5 +24,7 @@ packages:
         runtime: 'nodejs:10'
         inputs:
           LOG_LEVEL: debug
+          __namespace: $AIO_RUNTIME_NAMESPACE
+          __auth: $AIO_RUNTIME_AUTH
         annotations:
           final: true

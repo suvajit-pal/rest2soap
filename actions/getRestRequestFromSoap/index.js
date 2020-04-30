@@ -1,10 +1,9 @@
 /*  
  * Helper action to get REST request format from SOAP
+ *
  * Suvajit@Adobe.
 */
 
-//const { Core } = require('@adobe/aio-sdk');
-//const { create, fragment, convert } = require('xmlbuilder2');
 const Utils = require('../utils');
 
 async function main (params) {
@@ -19,7 +18,7 @@ async function main (params) {
 	if (!soapRequest) {
 		return {
 		  'Content-Type': 'application/json',
-		  statusCode: 400,
+		  statusCode: 500,
 		  body: {
 			error: 'Missing one or more required params : soapRequest'
 		  }
