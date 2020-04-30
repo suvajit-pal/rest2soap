@@ -113,7 +113,9 @@ web-src/
 e2e/
 .vscode/
 
-#config files
-config.json
+#config and key files
+config/config.json
+config/config_test.json
 keys/
-config_test.json
+
+

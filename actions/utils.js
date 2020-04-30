@@ -90,7 +90,7 @@ Utils.prototype.setPGPPreferences = function(openpgp) {
 Utils.prototype.initPGPKeys = async function() {
 
 	if (!this.__privateKey && !this.__publicKey) {
-		const privateKeyArmored = this.__params.key ? this.__params.key : (Buffer.from(this.__params.f_key, 'base64')).toString('ascii');
+		const privateKeyArmored = this.__params.private_key ? this.__params.private_key : (Buffer.from(this.__params.f_private_key, 'base64')).toString('ascii');
 		const publicKeyArmored = this.__params.public_key ? this.__params.public_key : (Buffer.from(this.__params.f_public_key, 'base64')).toString('ascii');
 		const pass = this.__params.pass;
 		

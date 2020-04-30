@@ -11,22 +11,19 @@ async function main (params) {
 			
   try {
 	const util = new Utils(params);	
-	
-	// Check if the Decrypted switch is set, if not set then init PGP options
-	if (!params.decrypted || params.decrypted == 'N') {
-		await util.initPGPKeys();			
-	}
-			
 	let decryptedData={};
-	
-	if (params.decrypted && params.decrypted == 'Y') {
-		decryptedData = JSON.parse(util.getPayloadData());
+
+	// Check if the request is encrypted or plain text.
+	if (params.encryptRequest && params.encryptRequest == 'Y') {
+		await util.initPGPKeys();	
+		const data = util.getPayloadData();		
+		decryptedData = JSON.parse(await util.decryptData(data));				
 	}
 	else {
-		const data = util.getPayloadData();		
-		decryptedData = JSON.parse(await util.decryptData(data));
+		decryptedData = JSON.parse(util.getPayloadData());
 	}
-
+			
+	// Make the Campaign SOAP call.
 	const restResponse = await util.makeSoapCall(decryptedData);
 	
 	if (params.encryptResponse && params.encryptResponse == 'Y') {
@@ -47,7 +44,7 @@ async function main (params) {
   } catch (error) {
     return {
       statusCode: 500,
-      body: { error: error.toString() }
+      body: { error: error.message, code: error.code }
     }
   }
 }

@@ -1,0 +1,12 @@
+{
+	"encryptRequest"		:	"/** Possible values Y and N. Set to Y, if the incoming request will be PGP encrypted */", 
+	"encryptResponse"		: 	"/** Possible values Y and N. Set to Y if the response has to be PGP encrypted */",
+	"generateToken"			:	"/** Possible values Y and N. Set to Y if the API should generate loginTokens for Campaign SOAP Calls.*/",
+	"instanceLoginAPI"		: 	"/** The login username that will be used to generate tokens. Required if generateToken is set to Y. */",
+	"instanceLoginAPIKey"	: 	"/** The login password that will be used to generate tokens. Required if generateToken is set to Y.",
+	"instance"				:	"/** The instance identifier without campaign.adobe.com prefix. */",
+	"pass"					:	"/** The PGP private key password. Required if either encryptRequest or encryptResponse is set to Y.*/",
+	"private_key"			:	"/** The PGP private key in ASCII armoured format. Required if either encryptRequest or encryptResponse is set to Y.*/",
+	"public_key"			:	"/** The PGP public key in ASCII armoured format. Required if either encryptRequest or encryptResponse is set to Y.*/",
+	"verifySignature"		: 	"/** Possible values Y and N. Set to Y if the PGP request should be validated using the 'public_key' and the PGP response will be signed with 'key'. */"
+}

@@ -32,7 +32,7 @@ async function main (params) {
   } catch (error) {
     return {
       statusCode: 500,
-      body: { error: error.toString() }
+      body: { error: error.message, code: error.code }
     }
   }
 }
