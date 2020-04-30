@@ -1,8 +1,0 @@
-{
-	"decrypted":"Y, *** Set to N if the payload is encrypted and required decryption ***", 
-	"encryptResponse": "N, *** Set to Y if the response needs to be encrypted and signed ***",
-	"instance":"*** enter campaign instance ***",
-	"pass":"*** password for PGP requests ***",
-	"key":"*** The PGP Key, only required for decryption or signing a payload ***",
-	"public_key": "*** The PGP Public key for encryption and signature validation ***"
-}
