@@ -16,6 +16,7 @@ Author: Suvajit@Adobe
 * This file exposes some common utilities for our actions. 
 */
 
+const { Config } = require('@adobe/aio-sdk').Core;
 const { create, fragment, convert } = require('xmlbuilder2');
 const fetch = require('node-fetch');
 const openpgp = require('@tripod/openpgp'); 
@@ -37,11 +38,8 @@ function Utils(params) {
 Utils.prototype.initState = async function() {
 	if (this.__state && this.__state != null) return this.__state;
 	
-	const key_namespace = '__namespace';
-	const key_auth = '__auth';
-	
-	const namespace = (this.__params[key_namespace] || '').toString();
-	const auth = (this.__params[key_auth] || '').toString();
+	const namespace = Config.get('runtime.namespace') || ''; 
+	const auth = Config.get('runtime.namespace') || ''; 
 	
 	if (namespace != '' && auth != '') {
 		const stateLib = require('@adobe/aio-lib-state');

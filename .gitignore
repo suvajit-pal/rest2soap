@@ -110,6 +110,7 @@ dist
 
 #aio runtime directories
 web-src/
+web-src/actions/
 e2e/
 .vscode/
 
