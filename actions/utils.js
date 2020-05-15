@@ -347,13 +347,13 @@ Utils.prototype.getLoginPayload = function() {
  * 
  * @returns The REST format response returned
  */
-Utils.prototype.makeSoapCall = async function(requestObj, generateToken = false) {
+Utils.prototype.makeSoapCall = async function(requestObj, generateToken = false, instanceName = '', useTokens = false) {
 	
-	const apiEndpoint = this.getSOAPAPIEndpoint();
-	const tokenKey = 'tokens_'+this.__params.instance;
+	const apiEndpoint = this.getSOAPAPIEndpoint(instanceName) ;
+	const tokenKey = 'tokens_'+(instanceName == '' ? this.__params.instance : instanceName);
 
 	// Check if we expect logon token to be available.
-	if ((this.__params.generateToken && this.__params.generateToken === 'Y') || generateToken) {
+	if ((this.__params.generateToken && this.__params.generateToken === 'Y' && !useTokens) || generateToken) {
 		// The system should automatically generate logon tokens.
 		// any tokens passed in the input will be overwridden.
 	
@@ -445,9 +445,9 @@ Utils.prototype.getTokens = async function() {
  *
  * @returns {string} the SOAP API endpoint
  */
-Utils.prototype.getSOAPAPIEndpoint = function() {
+Utils.prototype.getSOAPAPIEndpoint = function(instanceName = '') {
 
-	return 'https://'+this.__params.instance+'.campaign.adobe.com/nl/jsp/soaprouter.jsp';	
+	return 'https://'+(instanceName == '' ? this.__params.instance : instanceName) +'.campaign.adobe.com/nl/jsp/soaprouter.jsp';	
 }
 
 /**
