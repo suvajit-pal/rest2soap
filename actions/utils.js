@@ -39,7 +39,7 @@ Utils.prototype.initState = async function() {
 	if (this.__state && this.__state != null) return this.__state;
 	
 	const namespace = Config.get('runtime.namespace') || ''; 
-	const auth = Config.get('runtime.namespace') || ''; 
+	const auth = Config.get('runtime.auth') || ''; 
 	
 	if (namespace != '' && auth != '') {
 		const stateLib = require('@adobe/aio-lib-state');
