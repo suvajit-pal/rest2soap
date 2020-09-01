@@ -2,18 +2,32 @@ packages:
   __APP_PACKAGE__:
     license: Apache-2.0
     actions:
+      invokeAsAsync:
+        function: actions\invokeAsAsync\index.js
+        web: 'yes'
+        runtime: 'nodejs:12'
+        inputs:
+          LOG_LEVEL: debug
+          __auth: $AIO_RUNTIME_AUTH
+          __namespace: $AIO_RUNTIME_NAMESPACE
+          __host: $AIO_RUNTIME_APIHOST
+        annotations:
+          final: true
+      getAsyncResponse:
+        function: actions\getAsyncResponse\index.js
+        web: 'yes'
+        runtime: 'nodejs:12'
+        inputs:
+          LOG_LEVEL: debug
+          __auth: $AIO_RUNTIME_AUTH
+          __namespace: $AIO_RUNTIME_NAMESPACE
+          __host: $AIO_RUNTIME_APIHOST
+        annotations:
+          final: true
       testConnection:
         function: actions\testConnection\index.js
         web: 'yes'
-        runtime: 'nodejs:10'
-        inputs:
-          LOG_LEVEL: debug
-        annotations:
-          final: true
-      getRestRequestFromSoap:
-        function: actions\getRestRequestFromSoap\index.js
-        web: 'yes'
-        runtime: 'nodejs:10'
+        runtime: 'nodejs:12'
         inputs:
           LOG_LEVEL: debug
         annotations:
@@ -21,7 +35,17 @@ packages:
       invokeSoapAction:
         function: actions\invokeSoapAction\index.js
         web: 'yes'
-        runtime: 'nodejs:10'
+        runtime: 'nodejs:12'
+        inputs:
+          LOG_LEVEL: debug
+          __auth: $AIO_RUNTIME_AUTH
+          __namespace: $AIO_RUNTIME_NAMESPACE          
+        annotations:
+          final: true
+      getRestRequestFromSoap:
+        function: actions\getRestRequestFromSoap\index.js
+        web: 'yes'
+        runtime: 'nodejs:12'
         inputs:
           LOG_LEVEL: debug
         annotations:

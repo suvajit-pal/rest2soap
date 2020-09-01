@@ -15,6 +15,7 @@ Author: Suvajit@Adobe
  * Test connection 
  *	Validate Encryption Keys.
  * 	Validate Decryption Keys.
+ *  Validate proxy encryption + decryption.
  */
 
 const Utils = require('../utils');
@@ -61,6 +62,32 @@ async function main (params) {
 		  statusCode: 200,
 		  body: encryptedData
 		}	
+	}
+	else if (params.checkProxy && params.checkProxy == 'Y') {
+		// if this is  aproxy test request first try to decrypt it
+		const data = util.getPayloadData();		
+		
+		if (!data) {
+			return {
+				'Content-Type': 'application/json',
+				statusCode: 400,
+				body: {
+					error: 'Missing encrypted payload data.'
+				}
+			}		
+		}		
+
+		const decryptedData = JSON.parse(await util.decryptData(data));
+		decryptedData.responseMsg = {message: "Adding test message from Adobe @ " + new Date()};
+
+		const encryptedData = await util.encryptData(decryptedData);		
+		
+		return {
+		  'Content-Type': 'text/plain',
+		  statusCode: 200,
+		  body: encryptedData
+		}	
+
 	}
 	else {
 		return {

@@ -30,22 +30,24 @@ function Utils(params) {
 	this.__params = params; 
 	
 	this.__soapConfig = require('./accSoapConfig');	
+	this.__mobileConfig = require('./aioMobileConfig');
 }
+
+Utils.__isLock = false;
 
 /**
  * Initializes the persistent State library
  */
 Utils.prototype.initState = async function() {
 	if (this.__state && this.__state != null) return this.__state;
-	
-	const namespace = Config.get('runtime.namespace') || ''; 
-	const auth = Config.get('runtime.auth') || ''; 
-	
-	if (namespace != '' && auth != '') {
+	//return null;
+	const namespace = Config.get('runtime.namespace') || this.__params.__namespace || ''; 
+	const auth = Config.get('runtime.auth') ||  this.__params.__auth || ''; 
+
+	if (namespace != '' && namespace != 'guest' && auth != '') {
 		const stateLib = require('@adobe/aio-lib-state');
 		const state = await stateLib.init({ow: {namespace: namespace, auth: auth}});
 		this.__state = state;
-		
 		return this.__state;
 	}
 	else return null;
@@ -298,10 +300,14 @@ Utils.prototype.getRestResponse = function (obj, method) {
 	
 	let restResponse = response[this.__soapConfig.soapEnvRespStr][this.__soapConfig.soapBodyRespStr][this.__soapConfig.nsKeyword+method+'Response'];
 	if (!restResponse || restResponse == undefined) {
-		restResponse = response[this.__soapConfig.soapEnvRespStr][this.__soapConfig.soapBodyRespStr][this.__soapConfig.soapFaultRespStr];
-		if (!restResponse || restResponse == undefined) throw new Error(`Failed to parse response. Original response ${response}`);
+		restResponse = response[this.__soapConfig.soapEnvRespStr][this.__soapConfig.soapBodyRespStr][this.__soapConfig.urnKeyword+method+'Response'];
+		if (!restResponse || restResponse == undefined) {
+			restResponse = response[this.__soapConfig.soapEnvRespStr][this.__soapConfig.soapBodyRespStr][this.__soapConfig.soapFaultRespStr];
+			if (!restResponse || restResponse == undefined) throw new Error(`Failed to parse response. Original response ${JSON.stringify(response)}`);
+		}
 	}
 	restResponse = this.cleanSoapPropNames(restResponse);
+	//console.log("Returning from REST response " + JSON.stringify(restResponse));
 	return restResponse;
 }
 
@@ -311,13 +317,13 @@ Utils.prototype.getRestResponse = function (obj, method) {
  *
  * @returns {object} the login payload
  */
-Utils.prototype.getLoginPayload = function() {
+Utils.prototype.getLoginPayload = function(instanceName = '') {
 
 	const loginPayload = {
 							method: "Logon",
 							payload: {
-								strLogin: this.__params.instanceLoginAPI,
-								strPassword: this.__params.instanceLoginAPIKey,
+								strLogin: (instanceName == '' ? this.__params.instanceLoginAPI : this.__params[instanceName].instanceLoginAPI),
+								strPassword: (instanceName == '' ? this.__params.instanceLoginAPIKey : this.__params[instanceName].instanceLoginAPIKey),
 								elemParameters: {}
 							},
 							schema: "xtk:session",
@@ -350,6 +356,7 @@ Utils.prototype.getLoginPayload = function() {
 Utils.prototype.makeSoapCall = async function(requestObj, generateToken = false, instanceName = '', useTokens = false) {
 	
 	const apiEndpoint = this.getSOAPAPIEndpoint(instanceName) ;
+	//console.log("-- API ENDPOINT : " + apiEndpoint);
 	const tokenKey = 'tokens_'+(instanceName == '' ? this.__params.instance : instanceName);
 
 	// Check if we expect logon token to be available.
@@ -358,11 +365,13 @@ Utils.prototype.makeSoapCall = async function(requestObj, generateToken = false,
 		// any tokens passed in the input will be overwridden.
 	
 		let loginTokens = await this.getKeyValue(tokenKey);
+		//console.log("-- login tokens " + JSON.stringify(loginTokens));
 		if (!loginTokens) {
-			loginTokens = await this.getTokens();
+			console.log(' --- getting new tokens for ' + instanceName);
+			loginTokens = await this.getTokens(instanceName);
 			
 			// save the token for reuse
-			await this.setKeyValue(tokenKey, loginTokens, loginTokens.sesstionTimeout);
+			await this.setKeyValue(tokenKey, loginTokens, (loginTokens.sesstionTimeout > 3000 ? loginTokens.sesstionTimeout-3000: loginTokens.sesstionTimeout)); // reduce timeout by 3 sec for edge cases where token will expire soon.
 		}	
 		requestObj.securityToken = loginTokens.securityToken;
 		requestObj.sessionToken = loginTokens.sessionToken;		
@@ -413,15 +422,51 @@ Utils.prototype.makeSoapCall = async function(requestObj, generateToken = false,
 }
 
 /**
+ * @param {object} Input request object in JSON format.
+ * @param {boolean} Force generation of token if required.
+ * 
+ * @returns The REST format response returned
+ */
+Utils.prototype.makeInteractionSoapCall = async function(requestObj, environment = '', space = '', serverName = '', serverUrl = '') {
+	
+	const apiEndpoint = (serverUrl != '' ? serverUrl : "https://" + (serverName != '' ? serverName : this.__params.interactionServer)+"/interaction/"+environment+"/"+space);
+	// console.log('--- Final interaction endpoint: ' + apiEndpoint);
+	// Build the SOAP request XML from the rest object
+	const soapRequest = this.makeSoapObj(requestObj);
+	//return soapRequest;
+	let headers = {
+					'Content-Type': 'text/xml;charset=UTF-8',
+					'SOAPAction': requestObj.schema+'#'+requestObj.method
+				  };
+	
+	// Define the final payload
+	const options = {
+      headers: headers,
+      method: 'POST',
+      body: soapRequest.toString()
+	};
+	
+	// Make the soap call
+	const soapResponse = await fetch(apiEndpoint, options);
+    	
+	// Retrieve the response.
+	const content = await soapResponse.text();
+	// Transpose it to a valid JSON object
+	const restResponse = this.getRestResponse(content, requestObj.method);
+
+	return restResponse;
+}
+
+/**
  * Performs Login and retrieves token
  *
  *
  * @returns {object} the session and security tokens
  */
-Utils.prototype.getTokens = async function() {
+Utils.prototype.getTokens = async function(instanceName = '') {
 
-	const loginPayload = this.getLoginPayload();
-	const apiEndpoint = this.getSOAPAPIEndpoint();
+	const loginPayload = this.getLoginPayload(instanceName);
+	const apiEndpoint = this.getSOAPAPIEndpoint(instanceName);
 	const soapResponse = await fetch(apiEndpoint, loginPayload);
     
 	if (!soapResponse.ok) {
@@ -447,7 +492,9 @@ Utils.prototype.getTokens = async function() {
  */
 Utils.prototype.getSOAPAPIEndpoint = function(instanceName = '') {
 
-	return 'https://'+(instanceName == '' ? this.__params.instance : instanceName) +'.campaign.adobe.com/nl/jsp/soaprouter.jsp';	
+	const instance = instanceName == '' ? this.__params.instance : instanceName;
+	
+	return this.__params[instance] && this.__params[instance]['soapEndPointUrl'] ?  this.__params[instance]['soapEndPointUrl'] : 'https://'+ instance +'-t.adobe-campaign.com/nl/jsp/soaprouter.jsp';	
 }
 
 /**
@@ -461,8 +508,8 @@ Utils.prototype.getKeyValue = async function(key) {
 	
 	await this.initState();	
 	if (!this.__state) return null;
-	
-	const val = await this.__state.get(key);	
+
+	const val = await this.__state.get(key);		
 	if (!val) return null;
 	 
 	const expired = new Date(val.expiration);
@@ -480,13 +527,116 @@ Utils.prototype.getKeyValue = async function(key) {
  * @returns {any} The value associated with the key
  */
 Utils.prototype.setKeyValue = async function(key, value, duration = 86400) {
-	
+
 	await this.initState();	
 	if (!this.__state) return null;
 	
 	if (key == null || key == undefined || key == '') return;
 	
 	await this.__state.put(key, value, {ttl: duration});
+	//console.log('--- Saving state : ' + JSON.stringify({key: key, value: value, duration: duration}));
+}
+
+/**
+* Sleeps for the specified milli-seconds.
+* @param {integer} milliseconds to sleep
+*
+* @returns {none} 
+*/
+Utils.prototype.sleep = function(delay) {
+	return new Promise(resolve => setTimeout(resolve, delay));
+}
+
+/**
+* Acquire a lock based on input key.
+* The lock indicator is saved via aio-lib-state
+* Note - Due to multi-threaded nature, this is a best effort locking functionality 
+*			and does not gaurantee a lock success means exclusive lock in all scenarios.
+* @param {string} the lock key
+*
+* @returns {boolean} true if the lock is successfully acquired, else false. 
+*/
+Utils.prototype.acquireLock = async function (key) {
+	const sleepTimings = [100, 300, 500, 400, 200];
+	const maxIter = 1000; // max times we will iter while trying to set the lock.
+
+	for (var i = 0; i < maxIter; i++) {
+		await this.sleep(sleepTimings[Math.floor(Math.random()*sleepTimings.length)]); // randomly wait for few m-sec.
+
+		if (!Utils.__isLock) {
+			Utils.__isLock = true; // set to true
+
+			const value = await this.getKeyValue(key);
+
+			if (!value) {
+				await this.setKeyValue(key, new Date(), 300);
+				return true;
+			}
+			else {
+				Utils.__isLock = false;
+			}
+		}		
+	}
+	return false;
+}
+
+/**
+* Unlock a lock acquired via acquireLock method.
+* The lock indicator is saved via aio-lib-state.
+* @param {string} the lock key
+*
+* @returns {boolean} true
+*/
+Utils.prototype.unlock = async function (key) {
+	await this.setKeyValue(key, new Date(), 1);
+	Utils.__isLock = false;
+	
+	return true;
+}
+
+/**
+ * Returns the formatted mobile number
+ * @param {string} mobNumber the mobile number with or without country code.
+ *        e.g. +886876354636 or (886)876354636 or 876354636
+ * @param {string} countryCode eg, 886, +886, 91, +91, 65, +65, etc.
+ *
+ * @returns {string} mobile number with country code
+ */
+
+Utils.prototype.formatMobileNumber = function (mobNumber, countryCode = null) {
+	const mobOptions = this.__mobileConfig.aioMobileConfig;	
+	// lookup countryCode and find country
+	let country = mobOptions.default_country;
+
+	if (countryCode && (!mobOptions.asNull || mobOptions.asNull && mobOptions.asNull.indexOf(countryCode) == -1)) {
+		countryCode = countryCode.replace(/[^\d]/g, ''); // remove non numeric characters
+		
+		for (let [key, value] of Object.entries(mobOptions)) {			
+			if (value && value.code && value.code == countryCode) {
+				country = key;
+				break;
+			}
+		}		
+	}
+	const countryCodePrefix = mobOptions[country].code;
+	const numberLength = mobOptions[country].length;
+
+	// check if any number validator needs to be executed
+	if (mobOptions[country] && mobOptions[country].numberValidator) {
+		var regCheck = new RegExp(mobOptions[country].numberValidator);
+		if (!regCheck.test(mobNumber)) return ''; // return empty string if number fails validation
+		
+		const testNumber = mobNumber.replace(regCheck, '').replace(/[^\d]/g, '');
+		if (testNumber != '' && testNumber.length < numberLength) return '';
+	}
+
+	// now clean the mobile number
+	const mobileNumber = mobOptions[country].asNull && mobOptions[country].asNull.indexOf(mobNumber) > -1 ? '' : mobNumber.replace(/[^\d]/g, ''); // remove non numeric characters
+	if (mobileNumber.length < numberLength || Number.isNaN(Number.parseInt(mobileNumber)) || Number.parseInt(mobileNumber) == 0) return '';
+
+	const formattedMobNumber = countryCodePrefix + mobileNumber.substr(-1*numberLength);
+
+	return formattedMobNumber;
 }
 
 module.exports = Utils;

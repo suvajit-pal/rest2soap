@@ -118,5 +118,9 @@ e2e/
 config/config.json
 config/config_test.json
 keys/
-
+naasSendSMS/
+triggerMCCall/
+naasDeliveryReport/
+config/*.json
+test/
 

@@ -6,10 +6,6 @@
     "@adobe/aio-sdk": "^2.0.0",
     "@tripod/openpgp": "4.1.2-node8-8",
     "node-fetch": "^2.6.0",
-    "prop-types": "^15.7.2",
-    "react": "^16.13.1",
-    "react-dom": "^16.13.1",
-    "react-error-boundary": "^1.2.5",
     "xmlbuilder2": "^1.8.1"
   },
   "devDependencies": {
