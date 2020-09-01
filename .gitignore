@@ -116,11 +116,10 @@ e2e/
 
 #config and key files
 config/config.json
-config/config_test.json
+config/config_*.json
 keys/
 naasSendSMS/
 triggerMCCall/
 naasDeliveryReport/
-config/*.json
 test/
 
