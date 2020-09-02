@@ -5,6 +5,8 @@ This is technically not a pure REST wrapper as it supports only POST actions and
 
 - Additionally this package supports calls from systems that need to pass sensitive information over a secure PGP encrypted format. Supports both encrypted PGP request and response.
 
+- If you are looking for ACC SDK implementation, please check https://github.com/adobe/acc-js-sdk
+
 ## Setup
 
 - Get a Adobe IO Runtime environemnt provisioned.
