@@ -5,7 +5,7 @@
     "@adobe/aio-lib-state": "^1.0.4",
     "@adobe/aio-sdk": "^2.0.0",
     "@tripod/openpgp": "4.1.2-node8-8",
-    "node-fetch": "^2.6.0",
+    "node-fetch": "^2.6.1",
     "xmlbuilder2": "^1.8.1"
   },
   "devDependencies": {
