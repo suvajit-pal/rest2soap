@@ -20,6 +20,10 @@ const accSoapConfig = {
     soapBodyRespStr : 'SOAP-ENV:Body',
     soapFaultRespStr : 'SOAP-ENV:Fault',
     filterResponseElements : ['!','@','SOAP-ENV:encodingStyle', 'xsi:type', '_xmlns'],
+    offerProposeSchema: 'nms:proposition',
+    offerProposeMethod: 'Propose',
+    offerPropositionUpdateSchema: 'nms:interaction',
+    offerPropositionUpdateMethod: 'UpdateStatus'
 };
 
 module.exports = accSoapConfig;

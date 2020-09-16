@@ -250,6 +250,13 @@ Utils.prototype.getRestRequestFormat = function (soapRequest) {
 	
 	let restRequestFormat = {schema: schemaName, method: reqMethod, payload: this.cleanPropnames(requestPayload)};
 
+	// if this is an offer proposition call, add the offer environment and offer space
+	if ((schemaName === this.__soapConfig.offerProposeSchema && reqMethod === this.__soapConfig.offerProposeMethod)
+		|| (schemaName === this.__soapConfig.offerPropositionUpdateSchema && reqMethod === this.__soapConfig.offerPropositionUpdateMethod)) {
+		
+		restRequestFormat.offerEnv = '<<Pass Offer environment name>>';
+		restRequestFormat.offerSpace = '<<Pass Offer space name>>';
+	}
 	if (!this.__params.generateToken || this.__params.generateToken === 'N') {
 		restRequestFormat.securityToken = '<<Pass security token from Logon method response>>';
 		restRequestFormat.sessionToken = '<<Pass session token from Logon method response>>';
@@ -355,70 +362,91 @@ Utils.prototype.getLoginPayload = function(instanceName = '') {
  */
 Utils.prototype.makeSoapCall = async function(requestObj, generateToken = false, instanceName = '', useTokens = false) {
 	
-	const apiEndpoint = this.getSOAPAPIEndpoint(instanceName) ;
-	//console.log("-- API ENDPOINT : " + apiEndpoint);
-	const tokenKey = 'tokens_'+(instanceName == '' ? this.__params.instance : instanceName);
-
-	// Check if we expect logon token to be available.
-	if ((this.__params.generateToken && this.__params.generateToken === 'Y' && !useTokens) || generateToken) {
-		// The system should automatically generate logon tokens.
-		// any tokens passed in the input will be overwridden.
-	
-		let loginTokens = await this.getKeyValue(tokenKey);
-		//console.log("-- login tokens " + JSON.stringify(loginTokens));
-		if (!loginTokens) {
-			console.log(' --- getting new tokens for ' + instanceName);
-			loginTokens = await this.getTokens(instanceName);
-			
-			// save the token for reuse
-			await this.setKeyValue(tokenKey, loginTokens, (loginTokens.sesstionTimeout > 3000 ? loginTokens.sesstionTimeout-3000: loginTokens.sesstionTimeout)); // reduce timeout by 3 sec for edge cases where token will expire soon.
-		}	
-		requestObj.securityToken = loginTokens.securityToken;
-		requestObj.sessionToken = loginTokens.sessionToken;		
+	if (!requestObj || !requestObj.payload || !requestObj.method || !requestObj.schema ) {
+		throw new Error('Missing one or more required params payload, method, schema');
 	}
 
-	if (!requestObj.payload || !requestObj.method || !requestObj.schema || requestObj.securityToken === undefined || requestObj.sessionToken === undefined) {
-		throw new Error('Missing one or more required params sessionToken, securityToken, payload, method, schema');
-	}	
-	
-	// Build the SOAP request XML from the rest object
-	const soapRequest = this.makeSoapObj(requestObj);
-	let headers = {
-					'Content-Type': 'text/xml;charset=UTF-8',
-					'SOAPAction': requestObj.schema+'#'+requestObj.method
-				  };
-	
-	// Add authentication tokens
-	if 	(requestObj.securityToken && requestObj.securityToken != "")
-		headers['X-Security-Token'] = requestObj.securityToken;	
-	if 	(requestObj.sessionToken && requestObj.sessionToken != "")
-		headers['cookie'] = '__sessiontoken='+requestObj.sessionToken;	
-	
-	// Define the final payload
-	const options = {
-      headers: headers,
-      method: 'POST',
-      body: soapRequest.toString()
-    };
-	
-	// Make the soap call
-	const soapResponse = await fetch(apiEndpoint, options);
-    
-	if (!soapResponse.ok) {
-		// if the response has failed and we used auto generate tokens, 
-		// reset the key as the cached tokens are most probably invalid.
-		if ((this.__params.generateToken && this.__params.generateToken === 'Y') || generateToken) {
-			await this.setKeyValue(tokenKey, null);
+	/** Check if this is an offer proposition or proposition update call, then route accoridngly */
+	if (requestObj && 
+			(  (requestObj.schema === this.__soapConfig.offerProposeSchema && requestObj.method === this.__soapConfig.offerProposeMethod) 
+			|| (requestObj.schema === this.__soapConfig.offerPropositionUpdateSchema && requestObj.method === this.__soapConfig.offerPropositionUpdateMethod))){
+		
+		// this is an offer proposition or offer proposition update call
+		if (!requestObj.offerEnv || !requestObj.offerSpace) {
+			throw new Error('Missing offerEnv or offerSpace for Offer Interaction calls');
 		}
-		throw new Error(`request to '${apiEndpoint}' failed with status code '${soapResponse.status}'`)
-    }
-	
-	// Retrieve the response.
-	const content = await soapResponse.text();
-	// Transpose it to a valid JSON object
-	const restResponse = this.getRestResponse(content, requestObj.method);
 
-	return restResponse;
+		const interactionResponse = await this.makeInteractionSoapCall(requestObj, requestObj.offerEnv, requestObj.offerSpace, this.__params.interactionServer);
+		return interactionResponse;
+	}
+	else {
+		const instance = instanceName == '' ? this.__params.instance : instanceName;
+		const apiEndpoint = this.getSOAPAPIEndpoint(instance) ;
+		//console.log("-- API ENDPOINT : " + apiEndpoint);
+		const tokenKey = 'tokens_'+instance;
+	
+		// Check if we expect logon token to be available.
+		if ((this.__params.generateToken && this.__params.generateToken === 'Y' && !useTokens) || generateToken) {
+			// The system should automatically generate logon tokens.
+			// any tokens passed in the input will be overwridden.
+		
+			let loginTokens = await this.getKeyValue(tokenKey);
+			//console.log("-- login tokens " + JSON.stringify(loginTokens));
+			if (!loginTokens) {
+				console.log(' --- getting new tokens for ' + instance);
+				loginTokens = await this.getTokens(instance);
+				
+				// save the token for reuse
+				await this.setKeyValue(tokenKey, loginTokens, (loginTokens.sesstionTimeout > 3000 ? loginTokens.sesstionTimeout-3000: loginTokens.sesstionTimeout)); // reduce timeout by 3 sec for edge cases where token will expire soon.
+			}	
+			requestObj.securityToken = loginTokens.securityToken;
+			requestObj.sessionToken = loginTokens.sessionToken;		
+		}		
+
+		if (requestObj.securityToken === undefined || requestObj.sessionToken === undefined) {
+			throw new Error('Missing one or more required params sessionToken, securityToken.');
+		}
+
+		// Build the SOAP request XML from the rest object
+		const soapRequest = this.makeSoapObj(requestObj);
+		let headers = {
+						'Content-Type': 'text/xml;charset=UTF-8',
+						'SOAPAction': requestObj.schema+'#'+requestObj.method
+					  };
+		
+		// Add authentication tokens
+		if 	(requestObj.securityToken && requestObj.securityToken != "")
+			headers['X-Security-Token'] = requestObj.securityToken;	
+		if 	(requestObj.sessionToken && requestObj.sessionToken != "")
+			headers['cookie'] = '__sessiontoken='+requestObj.sessionToken;	
+		
+		// Define the final payload
+		const options = {
+		  headers: headers,
+		  method: 'POST',
+		  body: soapRequest.toString()
+		};
+		
+		// Make the soap call
+		const soapResponse = await fetch(apiEndpoint, options);
+		
+		if (!soapResponse.ok) {
+			// if the response has failed and we used auto generate tokens, 
+			// reset the key as the cached tokens are most probably invalid.
+			if ((this.__params.generateToken && this.__params.generateToken === 'Y') || generateToken) {
+				await this.setKeyValue(tokenKey, null);
+			}
+			throw new Error(`request to '${apiEndpoint}' failed with status code '${soapResponse.status}'`)
+		}
+		
+		// Retrieve the response.
+		const content = await soapResponse.text();
+		// Transpose it to a valid JSON object
+		const restResponse = this.getRestResponse(content, requestObj.method);
+	
+		return restResponse;
+	
+	}
 }
 
 /**

@@ -1,6 +1,6 @@
 {
   "name": "rest2soap",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "dependencies": {
     "@adobe/aio-lib-state": "^1.0.4",
     "@adobe/aio-sdk": "^2.0.0",
